@@ -1,0 +1,638 @@
+---
+title: "Nicho Ecológico"
+author: "Stefanny Vega Calvo"
+format: html
+editor: visual
+theme: yeti
+lang: es
+toc: true
+---
+
+# Nicho Ecológico Quetzales (Pharomachrus)
+
+![Imagen local](C:/Users/Hp%20Elitebook/Desktop/stefanny/WhatsApp%20Image%202024-11-27%20at%2010.31.43%20PM.jpeg)
+
+Costa Rica es un país con una gran presencia de avistamiento de esta majestuosa ave, siendo uno de los mayores atractivos.
+
+Habitad puede encontrar el Quetzal desde *México hasta el oeste de Panamá.*
+
+El Quetzal es el ave nacional de Guatemala, también es el nombre que se da la moneda guatemalteca.
+
+# Nicho Ecológico Quetzales (Pharomachrus)
+
+```{r}
+#| label: Caraga-paquetes
+#| warning: false
+#| message: false
+
+
+# Colección de paquetes de Tidyverse
+library(tidyverse)
+
+# Estilos para ggplot2
+library(ggthemes)
+
+# Paletas de colores de RColorBrewer
+library(RColorBrewer)
+
+# Paletas de colores de viridis
+library(viridisLite)
+
+# Gráficos interactivos
+library(plotly)
+
+# Manejo de datos vectoriales
+library(sf)
+
+# Manejo de datos raster
+library(terra)
+
+# Manejo de datos raster
+library(raster)
+
+# Mapas interactivos
+library(leaflet)
+
+# Acceso a datos en GBIF
+library(rgbif)
+
+# Datos geoespaciales
+library(geodata)
+
+# Modelado de distribución de especies
+library(dismo)
+library(rJava)
+```
+
+# Metodología
+
+1.  Se realiza primero la definición de la especie que se va a trabajar
+
+```{r}
+# Nombre de la especie
+especie <- "Pharomachrus"
+```
+
+2.  Consulta de datos de presencia de la especie a estudiar
+
+```{r}
+#| label: consulta-presencia 
+#| warning: false
+#| message: false
+# Consulta a GBIF
+respuesta <- occ_search(
+  scientificName = especie, 
+  hasCoordinate = TRUE,
+  hasGeospatialIssue = FALSE,
+  limit = 5000
+)
+
+# Extraer datos de presencia
+presencia <- respuesta$data
+```
+
+3.  Se convierte en un dato SF, Geometría.
+
+```{r}
+presencia <- st_as_sf(
+  presencia,
+  coords = c("decimalLongitude", "decimalLatitude"),
+  remove = FALSE, # conservar las columnas de las coordenadas
+  crs = 4326
+)
+```
+
+## Gráfico de Presencia de Quetzales por País
+
+```{r}
+#| label: Gráfico-1
+#| warning: false
+#| message: false
+# Gráfico ggplot2
+grafico_ggplot2 <-
+  presencia |>
+  st_drop_geometry() |>
+  ggplot(aes(x = fct_infreq(countryCode))) +
+  geom_bar(
+    aes(
+      text = paste0(
+        "Cantidad de registros de presencia: ", after_stat(count)
+      )
+    )    
+  ) +
+  ggtitle("Cantidad de registros de presencia por país") +
+  xlab("País") +
+  ylab("Cantidad de registros de presencia") +
+  labs(caption = "Fuente: GBIF") +
+  theme_economist()
+
+# Gráfico plotly
+ggplotly(grafico_ggplot2, tooltip = "text") |> 
+  config(locale = 'es')
+```
+
+En el gráfico podemos ver que *Costa Rica*, es el país que reporta la mayor cantidad de avistamiento de esta ave.
+
+```{r}
+#| label: Gráfico-2
+#| warning: false
+#| message: false
+# Gráfico de barras agrupadas 
+grafico_barras_ggplot2 <-
+presencia |>
+  ggplot(aes(x = continent, fill = species)) +
+  geom_bar(position = "dodge") +
+  ggtitle("Cantidad de species por continente") +
+  xlab("Continente") +
+  ylab("especies") +
+  labs(fill = "Especies") +
+  theme_minimal()
+
+# Gráfico de barras plotly
+ggplotly(grafico_barras_ggplot2) |> 
+  config(locale = 'es')
+```
+
+Con el gráfico anterior podemos identificar en America del Sur, existen más especies de Quetzales que en America Central, sin embargo es en America Central donde se identifica la mayor cantidad de avistamientos.
+
+```{r}
+#| label: Mapa_presencia
+#| warning: false
+#| message: false
+# Mapa
+leaflet() |>
+  addTiles(group = "Mapa general") |>
+  addProviderTiles(
+    providers$Esri.WorldImagery, 
+    group = "Imágenes satelitales"
+  ) |>
+  addProviderTiles(
+    providers$CartoDB.Positron, 
+    group = "Mapa blanco"
+  ) |>  
+  addCircleMarkers(
+    # capa de registros de presencia (puntos)
+    data = presencia,
+    stroke = F,
+    radius = 2,
+    fillColor = 'green',
+    fillOpacity = 1,
+    popup = paste(
+      paste0("<strong>País: </strong>", presencia$country),
+      paste0("<strong>Localidad: </strong>", presencia$locality),
+      paste0("<strong>Fecha: </strong>", presencia$eventDate),
+      paste0("<strong>Fuente: </strong>", presencia$institutionCode),
+      paste0("<a href='", presencia$occurrenceID, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    group = "Registros de Bradypus variegatus"
+  ) |>
+  addLayersControl(
+    baseGroups = c("Mapa general", "Imágenes satelitales", "Mapa blanco"),
+    overlayGroups = c("Registros de Pharomachrus"))
+```
+
+## Carga de datos ambientales
+
+4.  Se realiza una descarga de Datos de WorlClim
+
+```{r}
+# Consulta a WorldClim
+clima <- worldclim_global(var = 'bio', res = 10, path = tempdir())
+
+# Nombres de las variables climáticas
+names(clima)
+```
+
+5.  Se realiza una descarga de Datos de Elevación
+
+```{r}
+#| label: Carga_de_datos_SRTM
+#| warning: false
+#| message: false
+
+# Consulta a SRTM
+elevacion <- elevation_global(res = 10, path = tempdir())
+
+# Nombres de las variables de elevación
+names(elevacion)
+```
+
+6.  Se define el área de Estudio y se recortan las variables con el área definida.
+
+```{r}
+# Definir la extensión del área de estudio
+area_estudio <- ext(
+  min(presencia$decimalLongitude) - 5, 
+  max(presencia$decimalLongitude) + 5,
+  min(presencia$decimalLatitude) - 5, 
+  max(presencia$decimalLatitude) + 5
+)
+
+# Recortar las variables bioclimáticas al área de estudio
+clima <- crop(clima, area_estudio)
+elevacion <- crop(elevacion, area_estudio)
+
+```
+
+## Mapa de Variables ambientales
+
+```{r}
+#| label: Mapa-variables-ambientales
+#| warning: false
+#| message: false
+
+# Paleta de colores de temperatura
+colores_temperatura <- colorNumeric(
+  palette = rev(brewer.pal(11, "RdYlBu")),
+  values(clima$wc2.1_10m_bio_1),
+  na.color = "transparent"
+)
+
+# Paleta de colores de precipitación
+colores_precipitacion <- colorNumeric(
+  palette = "Blues",
+  values(clima$wc2.1_10m_bio_12),
+  na.color = "transparent"
+)
+
+# Paleta de colores de elevación
+colores_elevacion <- colorNumeric(
+  palette = "YlGnBu", # Cambia según tu preferencia
+  values(elevacion),  # Usa el objeto 'elevacion'
+  na.color = "transparent"
+)
+
+# Mapa
+leaflet() |>
+  addTiles(group = "Mapa general") |>
+  addProviderTiles(
+    providers$Esri.WorldImagery, 
+    group = "Imágenes satelitales"
+  ) |>  
+  addProviderTiles(
+    providers$CartoDB.Positron, 
+    group = "Mapa blanco"
+  ) |>
+  addRasterImage( # capa raster de temperatura
+    clima$wc2.1_10m_bio_1,
+    colors = colores_temperatura,
+    opacity = 0.6,
+    group = "Temperatura",
+  ) |>
+  addRasterImage( # capa raster de precipitación
+    clima$wc2.1_10m_bio_12,
+    colors = colores_precipitacion,
+    opacity = 0.6,
+    group = "Precipitación",
+  ) |>
+  addRasterImage( # capa raster de elevación
+    elevacion,
+    colors = colores_elevacion, # Usa el objeto 'elevacion'
+    opacity = 0.6,
+    group = "Elevación",
+  ) |>
+  addCircleMarkers(
+    data = presencia,
+    stroke = F,
+    radius = 3,
+    fillColor = 'green',
+    fillOpacity = 1,
+    popup = paste(
+      paste0("<strong>País: </strong>", presencia$country),
+      paste0("<strong>Localidad: </strong>", presencia$locality),
+      paste0("<strong>Fecha: </strong>", presencia$eventDate),
+      paste0("<strong>Fuente: </strong>", presencia$institutionCode),
+      paste0("<a href='", presencia$occurrenceID, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    group = "Registros de Pharomachrus"
+  ) |>  
+  addLegend(
+    title = "Temperatura",
+    values = values(clima$wc2.1_10m_bio_1),
+    pal = colores_temperatura,
+    position = "bottomleft",
+    group = "Temperatura"
+  ) |>
+  addLegend(
+    title = "Precipitación",
+    values = values(clima$wc2.1_10m_bio_12),
+    pal = colores_precipitacion,
+    position = "bottomleft",
+    group = "Precipitación"
+  ) |>
+  addLegend(
+    title = "Elevación",
+    values = values(elevacion),  # Usa el objeto 'elevacion'
+    pal = colores_elevacion,
+    position = "bottomleft",
+    group = "Elevación"
+  ) |>  
+  addLayersControl(
+    baseGroups = c("Mapa general", "Imágenes satelitales", "Mapa blanco"),
+    overlayGroups = c("Temperatura", "Precipitación", "Elevación", "Registros de Pharomachrus")
+  ) |>
+  hideGroup("Precipitación") |>
+  hideGroup("Elevación")
+```
+
+# Modelización
+
+Este tipo de modelización corresponde a un análisis espacial, relacionado con la distribución geográfica de esta ave.
+
+Primero, se eliminan las coordenadas duplicadas del conjunto de datos de presencia.
+
+```{r}
+#| label: Elimina_coordenadas
+#| warning: false
+#| message: false
+# Crear dataframe con columnas de longitud y latitud
+coordenadas_presencia <- data.frame(
+  decimalLongitude = presencia$decimalLongitude,
+  decimalLatitude = presencia$decimalLatitude
+)
+
+# Eliminar coordenadas duplicadas
+coordenadas_presencia <- unique(coordenadas_presencia)
+```
+
+Seguidamente se dividen los datos de presencia en dos subconjuntos:
+
+1.  Entrenamiento: para desarrollar el modelo.
+2.  Evaluación: para evaluar el modelo.
+
+```{r}
+#| label: dividir_datos
+#| warning: false
+#| message: false
+# Establecer una "semilla" para garantizar que la selección aleatoria sea reproducible
+set.seed(123)
+
+# Cantidad de registros de presencia
+n_presencia <- nrow(coordenadas_presencia)
+
+# Con sample(), se selecciona aleatoriamente una proporción (ej. 0.7) 
+# de los índices de los datos de presencia para el conjunto de entrenamiento
+indices_entrenamiento <- sample(
+  1:n_presencia, 
+  size = round(0.7 * n_presencia)
+)
+
+# Crear el subconjunto de entrenamiento utilizando los índices seleccionados
+entrenamiento <- coordenadas_presencia[indices_entrenamiento, ]
+
+# Crear el subconjunto de evaluación con los datos restantes
+evaluacion <- coordenadas_presencia[-indices_entrenamiento, ]
+```
+
+# Modelo Maxent
+
+Maxent sirve para modelar la distribución geográfica de especies. Se basa en estadisticas que permiten identificar áreas donde hay mayor probabilidad de encontrar una especie, busca disminuir el sesgos al trabajar con la información obtenida.
+
+```{r}
+#| label: Modelación
+#| warning: false
+#| message: false
+# Los datos de clima deben convertirse al formato que usa el paquete raster
+# debido a es este el que acepta el paquete dismo
+clima <- raster::stack(clima)
+
+# Ejecutar el modelo
+modelo_maxent <- maxent(x = clima, p = entrenamiento)
+
+# Aplicar el modelo entrenado a las variables climáticas 
+# para generar un mapa de idoneidad del hábitat
+prediccion <- predict(modelo_maxent, clima)
+```
+
+# Evaluación
+
+```{r}
+# terra::extract() extrae los valores del raster de predicción 
+# en las coordenadas de evaluación
+# eval_pres almacena los valores de idoneidad predichos 
+# en los puntos de evaluación de presencia
+eval_pres <- terra::extract(
+  prediccion, 
+  evaluacion[, c('decimalLongitude', 'decimalLatitude')]
+)
+
+# Generar puntos aleatorios dentro del área de estudio definida. 
+# Estos puntos se asumen como ausencias de la especie.
+ausencias <- randomPoints(mask = clima, n = 1000)
+
+# eval_aus almacena los valores de idoneidad predichos
+# en los puntos de ausencia
+eval_aus <- terra::extract(
+  prediccion, 
+  ausencias
+)
+
+# Generar estadísticas de evaluación del modelo
+resultado_evaluacion <- evaluate(p = eval_pres, a = eval_aus)
+```
+
+##Curva ROC
+
+```{r}
+#| label: Gráfico_ROC
+#| warning: false
+#| message: false
+# Datos para graficar la curva ROC
+datos_roc <- data.frame(
+  FPR = resultado_evaluacion@FPR,
+  TPR = resultado_evaluacion@TPR,
+  Umbral = resultado_evaluacion@t
+)
+
+# Valor AUC
+auc <- resultado_evaluacion@auc
+
+# Gráfico ggplot2
+grafico_ggplot2 <-
+  ggplot(
+    datos_roc, 
+    aes(
+      x = FPR, 
+      y = TPR,
+      u = Umbral
+    )
+  ) +
+  geom_line(
+    color = "green", 
+    size = 1
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = paste("Curva ROC (AUC =", round(auc, 3), ")"),
+       x = "Tasa de falsos positivos (FPR)",
+       y = "Tasa de verdaderos positivos (TPR)") +
+  theme_minimal()
+
+# Gráfico plotly
+ggplotly(grafico_ggplot2) |> 
+  config(locale = 'es')
+```
+
+## Resultados
+
+El AUC = 0.978 este resultado indica que el modelo tiene una capacidad casi perfecta. Un AUC cercano a 1 indica que el modelo tiene un alto grado de precisión.
+
+# Mapa de idoneidad del hábitat
+
+```{r}
+# Paleta de colores del modelo
+colores_modelo <- colorNumeric(
+  palette = c("white", "black"),
+  values(prediccion),
+  na.color = "transparent"
+)
+
+# Mapa
+leaflet() |>
+  addTiles(group = "Mapa general") |>
+  addProviderTiles(
+    providers$Esri.WorldImagery, 
+    group = "Imágenes satelitales"
+  ) |>  
+  addProviderTiles(
+    providers$CartoDB.Positron, 
+    group = "Mapa blanco"
+  ) |>
+  addRasterImage( # capa raster de temperatura
+    clima$wc2.1_10m_bio_1,
+    colors = colores_temperatura, # paleta de colores
+    opacity = 0.6,
+    group = "Temperatura",
+  ) |>
+  addRasterImage( # capa raster de precipitación
+    clima$wc2.1_10m_bio_12,
+    colors = colores_precipitacion, # paleta de colores
+    opacity = 0.6,
+    group = "Precipitación",
+  ) |>
+  addRasterImage( # capa raster del modelo de distribución
+    prediccion,
+    colors = colores_modelo,
+    opacity = 0.6,
+    group = "Modelo de distribución",
+  ) |>  
+  addCircleMarkers(
+    # capa de registros de presencia (puntos)
+    data = presencia,
+    stroke = F,
+    radius = 3,
+    fillColor = 'green',
+    fillOpacity = 1,
+    popup = paste(
+      paste0("<strong>País: </strong>", presencia$country),
+      paste0("<strong>Localidad: </strong>", presencia$locality),
+      paste0("<strong>Fecha: </strong>", presencia$eventDate),
+      paste0("<strong>Fuente: </strong>", presencia$institutionCode),
+      paste0("<a href='", presencia$occurrenceID, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    group = "Registros de Pharomachrus"
+  ) |>  
+  addLegend(
+    title = "Temperatura",
+    values = values(clima$wc2.1_10m_bio_1),
+    pal = colores_temperatura,
+    position = "bottomleft",
+    group = "Temperatura"
+  ) |>
+  addLegend(
+    title = "Precipitación",
+    values = values(clima$wc2.1_10m_bio_12),
+    pal = colores_precipitacion,
+    position = "bottomleft",
+    group = "Precipitación"
+  ) |>
+  addLegend(
+    title = "Modelo de distribución",
+    values = values(prediccion),
+    pal = colores_modelo,
+    position = "bottomright",
+    group = "Modelo de distribución"
+  ) |>  
+  addLayersControl(
+    # control de capas
+    baseGroups = c("Mapa general", "Imágenes satelitales", "Mapa blanco"),
+    overlayGroups = c(
+      "Temperatura",
+      "Precipitación",
+      "Modelo de distribución",
+      "Registros de Pharomachrus"
+    )
+  ) |>
+  hideGroup("Temperatura") |>
+  hideGroup("Precipitación")
+```
+
+El mapa de idoneidad representa la distribución potencial de los Quetzales, la presencia de este se da en función de las condiciones climaticas, especiamente en zonas altas.
+
+#Mapa de acuerdo con el Umbral
+
+```{r}
+# Definir el umbral
+umbral <- 0.3
+
+# Crear el raster binario
+prediccion_binaria <- (prediccion >= umbral) * 1
+
+# Crear la paleta de colores para el raster binario
+colores_prediccion_binaria <- colorFactor(
+  palette = c("transparent", "blue"),  # "transparent" para las áreas no adecuadas
+  domain = c(0, 1),
+  na.color = "transparent"
+)
+
+# Mapa
+leaflet() |>
+  addTiles(group = "Mapa general") |>
+  addProviderTiles(
+    providers$Esri.WorldImagery, 
+    group = "Imágenes satelitales"
+  ) |>
+  addRasterImage(
+    prediccion_binaria,
+    colors = colores_prediccion_binaria,
+    opacity = 0.6,
+    group = "Modelo de distribución binario",
+  ) |>
+  addCircleMarkers(
+    data = presencia,
+    stroke = FALSE,
+    radius = 3,
+    fillColor = 'green',
+    fillOpacity = 1,
+    popup = paste(
+      paste0("<strong>País: </strong>", presencia$country),
+      paste0("<strong>Localidad: </strong>", presencia$locality),
+      paste0("<strong>Fecha: </strong>", presencia$eventDate),
+      paste0("<strong>Fuente: </strong>", presencia$institutionCode),
+      paste0("<a href='", presencia$occurrenceID, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    group = "Registros de Pharomachrus"
+  ) |>
+  addLegend(
+    title = "Modelo de distribución binario",
+    labels = c("Ausencia", "Presencia"),
+    colors = c("transparent", "blue"),
+    position = "bottomright",
+    group = "Modelo de distribución binario"
+  ) |>
+  addLayersControl(
+    baseGroups = c("Mapa general", "Imágenes satelitales"),
+    overlayGroups = c(
+      "Modelo de distribución binario",
+      "Registros de Pharomachrus"
+    )
+  )
+
+```
+
+El mapa muestra la *distribución potencial* para el Quetzal según un modelo de presencia/ausencia basado en un umbral de 0.3.
+
+El área azul indican zonas predichas como adecuadas para la especie, mientras que los puntos verdes representan registros reales de presencia, lo que permite evaluar la concordancia entre las predicciones y las observaciones. siendo este Umbral adecuado para esta especie.
